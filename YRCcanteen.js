@@ -120,6 +120,10 @@ async function getValues(html) {
   return [balance, topUp, expense];
 }
 
+function parseValue(value) {
+  return parseFloat(value.replace(",", ""));
+}
+
 async function getInfo() {
 	let [a, b, c] = await getCurrentPage();
 	//log(b);
@@ -140,9 +144,9 @@ async function getInfo() {
 	let [bal, top, exp] = ["0", "0", "0"];
 	if (a === 2) {
   	[bal, top, exp] = await getValues(b);
-    bal = Number(parseFloat(bal).toFixed(2)).toString();
-    top = Number(parseFloat(top).toFixed(2)).toString();
-    exp = Number(parseFloat(exp).toFixed(2)).toString();
+    bal = Number(parseValue(bal).toFixed(2)).toString();
+    top = Number(parseValue(top).toFixed(2)).toString();
+    exp = Number(parseValue(exp).toFixed(2)).toString();
   	log(bal);
   	log(top);
   	log(exp);
