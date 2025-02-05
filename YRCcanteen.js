@@ -1,7 +1,6 @@
 // Variables used by Scriptable.
 // These must be at the very top of the file. Do not edit.
 // icon-color: cyan; icon-glyph: magic;
-
 const username = "username"; // your username here
 const password = "password"; // your password here
 
@@ -175,8 +174,14 @@ async function createWidget() {
   
   const stack = listWidget.addStack();
   
-  listWidget.addSpacer(12);
-
+  //listWidget.addSpacer(8);
+  
+  const update_time = listWidget.addDate(new Date(Date.now()));
+  update_time.font = Font.lightSystemFont(14);
+  update_time.applyTimeStyle();
+  update_time.rightAlignText();
+  update_time.textColor = textColor;
+  
   
   const balStack = stack.addStack();
   balStack.layoutVertically();
