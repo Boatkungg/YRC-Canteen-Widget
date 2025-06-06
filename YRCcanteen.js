@@ -3,249 +3,241 @@
 // icon-color: cyan; icon-glyph: magic;
 const username = "username"; // your username here
 const password = "password"; // your password here
+const update_rate = 5; // update rate in minutes
+const DEBUG = false; // set to false to disable debug logs
 
-// update rate in minutes
-const update_rate = 5;
-
+function log(message) {
+  if (DEBUG) console.log(`[DEBUG] ${message}`);
+}
 
 async function getCurrentPage() {
-  const url = "https://www.yupparaj.ac.th/canteen/login.php"
+  const request = new Request("https://www.yupparaj.ac.th/canteen/login.php");
+  request.headers = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+  };
   
-  const request = new Request(url);
-  
-  const response = await request.loadString();
-  
-  if (request.response.statusCode === 200) {
+  try {
+    const response = await request.loadString();
+    log(`Page loaded: ${request.response.url} (${response.length} chars)`);
+    
     const currentURL = request.response.url;
-    //throw new Error(currentURL);
-    var currentPage = 0
-    if (currentURL === "https://www.yupparaj.ac.th/canteen/index.php") {
-      currentPage = 2;
-    } else if (currentURL === "https://www.yupparaj.ac.th/canteen/login.php") {
-      currentPage = 1;
-    } else {
-      return undefined;
+    let currentPage = 0;
+    
+    if (currentURL.includes("index.php")) {
+      currentPage = 2; // already logged in
+    } else if (currentURL.includes("login.php")) {
+      currentPage = 1; // need to login
     }
     
     return [currentPage, response, request.response];
+  } catch (error) {
+    log(`Error loading page: ${error.message}`);
+    return null;
   }
-  
-  return undefined;
 }
-
 
 async function getCSRF(html) {
-  const webView = new WebView();
+  // Try regex extraction first (faster)
+  const patterns = [
+    /name=['"]csrf_token['"][^>]*value=['"]([^'"]+)['"]/i,
+    /value=['"]([^'"]+)['"][^>]*name=['"]csrf_token['"]/i,
+    /<meta[^>]*name=['"]csrf-token['"][^>]*content=['"]([^'"]+)['"]/i
+  ];
   
-  await webView.loadHTML(html);
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      log(`CSRF token found: ${match[1].substring(0, 10)}...`);
+      return match[1];
+    }
+  }
   
-  const jsGetCSRF = `
-  document
-  	.getElementsByName('csrf_token')[0]
-    .value
-  `
-  const CSRF = await webView.evaluateJavaScript(jsGetCSRF);
-  
-  return CSRF
+  // Fallback to WebView
+  try {
+    const webView = new WebView();
+    await webView.loadHTML(html);
+    
+    const csrf = await webView.evaluateJavaScript(`
+      (function() {
+        var input = document.querySelector('input[name="csrf_token"]');
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return input?.value || meta?.getAttribute('content') || null;
+      })()
+    `);
+    
+    log(csrf ? `CSRF via WebView: ${csrf.substring(0, 10)}...` : "No CSRF token found");
+    return csrf;
+  } catch (error) {
+    log(`CSRF extraction failed: ${error.message}`);
+    return null;
+  }
 }
 
-
-async function Login(cookie, csrf_token) {
-  const url = "https://www.yupparaj.ac.th/canteen/api/login.php"
-  
-  const request = new Request(url);
-  
-  request.method = "POST"
-  
- // throw new Error(csrf_token);
-  
+async function login(cookie, csrf_token) {
+  const request = new Request("https://www.yupparaj.ac.th/canteen/api/login.php");
+  request.method = "POST";
   request.headers = {
     "Cookie": `PHPSESSID=${cookie}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+    "Referer": "https://www.yupparaj.ac.th/canteen/login.php"
+  };
+  request.body = `username=${username}&password=${password}&csrf_token=${csrf_token}&Login=`;
+  
+  try {
+    const response = await request.loadString();
+    log(`Login response: ${request.response.statusCode}`);
+    return request.response.statusCode === 200 ? [response, request.response] : null;
+  } catch (error) {
+    log(`Login failed: ${error.message}`);
+    return null;
   }
-  
-  request.body = `username=${username}&password=${password}&csrf_token=${csrf_token}&Login=`
-  
-	const response = await request.loadString();
-  
-  if (request.response.statusCode === 200) {
-    return [response, request.response];
-  }
-  
-  return undefined;
 }
 
-
-async function Logout(cookie) {
-  const url = "https://www.yupparaj.ac.th/canteen/logout.php"
-  
-  const request = new Request(url);
-  
-  request.method = "POST"
-  
-  request.headers = {
-    "Cookie": `PHPSESSID=${cookie}`,
+async function extractValues(html) {
+  try {
+    const webView = new WebView();
+    await webView.loadHTML(html);
+    
+    const values = await webView.evaluateJavaScript(`
+      (function() {
+        var inners = document.getElementsByClassName('inner');
+        var result = [];
+        for (var i = 0; i < 3; i++) {
+          if (inners[i]) {
+            var h3 = inners[i].getElementsByTagName('h3')[0];
+            result.push(h3 ? h3.textContent.trim() : '0');
+          } else {
+            result.push('0');
+          }
+        }
+        return result;
+      })()
+    `);
+    
+    log(`Extracted values: ${values}`);
+    return values.length === 3 ? values : ['0', '0', '0'];
+  } catch (error) {
+    log(`Value extraction failed: ${error.message}`);
+    return ['0', '0', '0'];
   }
-  
-	var response = await request.loadString();
-  
-  log(response);
-}
-
-
-function getValueNumber(number) {
-  return `
-  document
-  	.getElementsByClassName('inner')[${number}]
-    .getElementsByTagName('h3')[0]
-    .textContent
-  `;
-}
-
-
-async function getValues(html) {
-  const webView = new WebView();
-  
-  await webView.loadHTML(html);
-  
-  const jsGetBalance = getValueNumber(0);
-  const balance = await webView.evaluateJavaScript(jsGetBalance);
-  
-  const jsGetTopUp = getValueNumber(1);
-  const topUp = await webView.evaluateJavaScript(jsGetTopUp);
-  
-  const jsGetExpense = getValueNumber(2);
-  const expense = await webView.evaluateJavaScript(jsGetExpense);
-  
-  return [balance, topUp, expense];
 }
 
 function parseValue(value) {
-  return parseFloat(value.replace(",", ""));
+  const parsed = parseFloat(value.replace(/,/g, ''));
+  return isNaN(parsed) ? 0 : Number(parsed.toFixed(2));
 }
 
-async function getInfo() {
-	let [a, b, c] = await getCurrentPage();
-	//log(b);
-
-	const session = c.cookies.find(cookie => cookie.name === "PHPSESSID").value;
-  
-  //await Logout(session);
-  //a = 1;
-
-	log(session);
-
-	if (a === 1) {
-  	const csrf = await getCSRF(b);
-  	[b, c] = await Login(session, csrf);
-  	a = 2;
-	}
-
-	let [bal, top, exp] = ["0", "0", "0"];
-	if (a === 2) {
-  	[bal, top, exp] = await getValues(b);
-    bal = Number(parseValue(bal).toFixed(2)).toString();
-    top = Number(parseValue(top).toFixed(2)).toString();
-    exp = Number(parseValue(exp).toFixed(2)).toString();
-  	log(bal);
-  	log(top);
-  	log(exp);
-	}
-  
-  return [bal, top, exp];
+async function getCanteenData() {
+  try {
+    log("Starting canteen data retrieval");
+    
+    const pageData = await getCurrentPage();
+    if (!pageData) return ["Connection Error", "Connection Error", "Connection Error"];
+    
+    let [currentPage, html, response] = pageData;
+    
+    const session = response.cookies.find(cookie => cookie.name === "PHPSESSID")?.value;
+    if (!session) return ["No Session", "No Session", "No Session"];
+    
+    // Login if needed
+    if (currentPage === 1) {
+      log("Attempting login");
+      const csrf = await getCSRF(html);
+      if (!csrf) return ["No CSRF", "No CSRF", "No CSRF"];
+      
+      const loginResult = await login(session, csrf);
+      if (!loginResult) return ["Login Failed", "Login Failed", "Login Failed"];
+      
+      [html] = loginResult;
+    }
+    
+    // Extract values
+    const rawValues = await extractValues(html);
+    const processedValues = rawValues.map(val => {
+      const parsed = parseValue(val);
+      return parsed > 0 ? parsed.toString() : val;
+    });
+    
+    log(`Final values: ${processedValues}`);
+    return processedValues;
+    
+  } catch (error) {
+    log(`Error in getCanteenData: ${error.message}`);
+    return ["Error", "Error", "Error"];
+  }
 }
 
 async function createWidget() {
-  let listWidget = new ListWidget();
+  const listWidget = new ListWidget();
   listWidget.refreshAfterDate = new Date(Date.now() + 60000 * update_rate);
   
-  const [bal, top, exp] = await getInfo();
+  const [balance, topUp, expense] = await getCanteenData();
   
+  // Colors
   const headingColor = Color.dynamic(Color.black(), Color.white());
   const textColor = Color.dynamic(Color.darkGray(), Color.lightGray());
-  const balColor = Color.dynamic(new Color("#10b981"), new Color("34d399"));
+  const balColor = Color.dynamic(new Color("#10b981"), new Color("#34d399"));
   const topColor = Color.dynamic(new Color("#3b82f6"), new Color("#60a5fa"));
   const expColor = Color.dynamic(new Color("#ef4444"), new Color("#f87171"));
   
-  var heading = listWidget.addText("🍽️ YRC Canteen");
+  // Header
+  const heading = listWidget.addText("🍽️ YRC Canteen");
   heading.font = Font.boldSystemFont(24);
   heading.textColor = headingColor;
   
   listWidget.addSpacer();
   
+  // Data stack
   const stack = listWidget.addStack();
   
-  //listWidget.addSpacer(8);
+  // Create data sections
+  const sections = [
+    { title: "💰 คงเหลือ", value: balance, color: balColor },
+    { title: "📊 ยอดเติม", value: topUp, color: topColor },
+    { title: "💸 ซื้ออาหาร", value: expense, color: expColor }
+  ];
   
-  const update_time = listWidget.addDate(new Date(Date.now()));
-  update_time.font = Font.lightSystemFont(14);
-  update_time.applyTimeStyle();
-  update_time.rightAlignText();
-  update_time.textColor = textColor;
+  sections.forEach((section, index) => {
+    if (index > 0) stack.addSpacer();
+    
+    const sectionStack = stack.addStack();
+    sectionStack.layoutVertically();
+    sectionStack.centerAlignContent();
+    
+    const titleText = sectionStack.addText(section.title);
+    titleText.centerAlignText();
+    titleText.font = Font.lightSystemFont(18);
+    titleText.textColor = textColor;
+    
+    sectionStack.addSpacer(4);
+    
+    const valueText = sectionStack.addText(section.value);
+    valueText.centerAlignText();
+    valueText.font = Font.lightSystemFont(24);
+    valueText.textColor = section.color;
+  });
   
+  // Timestamp
+  const timestamp = listWidget.addDate(new Date());
+  timestamp.font = Font.lightSystemFont(14);
+  timestamp.applyTimeStyle();
+  timestamp.rightAlignText();
+  timestamp.textColor = textColor;
   
-  const balStack = stack.addStack();
-  balStack.layoutVertically();
-  balStack.topAlignContent();
-  
-  stack.addSpacer();
-  
-  const topStack = stack.addStack();
-  topStack.layoutVertically();
-  topStack.centerAlignContent();
-  
-  stack.addSpacer();
-  
-  const expStack = stack.addStack();
-  expStack.layoutVertically();
-  expStack.centerAlignContent();
-  
-  
-	var balanceHeading = balStack.addText("💰 คงเหลือ");
-  balanceHeading.centerAlignText();
-  balanceHeading.font = Font.lightSystemFont(18);
-  balanceHeading.textColor = textColor;
-  
-  balStack.addSpacer(4);
-  
-  var balance = balStack.addText(bal);
-  balance.centerAlignText();
-  balance.font = Font.lightSystemFont(24);
-  balance.textColor = balColor;
-  
-  
-  var topUpHeading = topStack.addText("📊 ยอดเติม");
-  topUpHeading.centerAlignText();
-  topUpHeading.font = Font.lightSystemFont(18);
-  topUpHeading.textColor = textColor;
-  
-  topStack.addSpacer(4);
-  
-  var topUp = topStack.addText(top);
-  topUp.centerAlignText();
-  topUp.font = Font.lightSystemFont(24);
-  topUp.textColor = topColor;
-  
-  
-  var expenseHeading = expStack.addText("💸 ซื้ออาหาร");
-  expenseHeading.centerAlignText();
-  expenseHeading.font = Font.lightSystemFont(18);
-  expenseHeading.textColor = textColor;
-  
-  expStack.addSpacer(4);
-  
-  var expense = expStack.addText(exp);
-  expense.centerAlignText();
-  expense.font = Font.lightSystemFont(24);
-  expense.textColor = expColor;
-  
-  return listWidget
+  return listWidget;
 }
 
-let widget = await createWidget();
-
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-} else {
-  widget.presentMedium();
-}
-Script.complete();
+// Main execution
+(async () => {
+  const widget = await createWidget();
+  
+  if (config.runsInWidget) {
+    Script.setWidget(widget);
+  } else {
+    widget.presentMedium();
+  }
+  
+  Script.complete();
+})();
