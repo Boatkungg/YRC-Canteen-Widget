@@ -10,6 +10,12 @@ function log(message) {
   if (DEBUG) console.log(`[DEBUG] ${message}`);
 }
 
+async function debugHTML(html) {
+  const webView = new WebView();
+  await webView.loadHTML(html);
+  await webView.present(true);
+}
+
 async function getCurrentPage() {
   const request = new Request("https://www.yupparaj.ac.th/canteen/login");
   request.headers = {
@@ -105,6 +111,8 @@ async function logout(cookie) {
   try {
     const response = await request.loadString();
     log(`Logout response: ${request.response.statusCode}`);
+  } catch (error) {
+    log(`Logout failed: ${error.message}`);
   }
 }
 
