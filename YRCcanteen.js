@@ -11,7 +11,7 @@ function log(message) {
 }
 
 async function getCurrentPage() {
-  const request = new Request("https://www.yupparaj.ac.th/canteen/login.php");
+  const request = new Request("https://www.yupparaj.ac.th/canteen/login");
   request.headers = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -24,9 +24,9 @@ async function getCurrentPage() {
     const currentURL = request.response.url;
     let currentPage = 0;
     
-    if (currentURL.includes("index.php")) {
+    if (currentURL.includes("dashboard")) {
       currentPage = 2; // already logged in
-    } else if (currentURL.includes("login.php")) {
+    } else if (currentURL.includes("login")) {
       currentPage = 1; // need to login
     }
     
@@ -40,9 +40,7 @@ async function getCurrentPage() {
 async function getCSRF(html) {
   // Try regex extraction first (faster)
   const patterns = [
-    /name=['"]csrf_token['"][^>]*value=['"]([^'"]+)['"]/i,
-    /value=['"]([^'"]+)['"][^>]*name=['"]csrf_token['"]/i,
-    /<meta[^>]*name=['"]csrf-token['"][^>]*content=['"]([^'"]+)['"]/i
+    /name=['"]_csrf_token"[^>]*value=['"]([^'"]+)['"]/i,
   ];
   
   for (const pattern of patterns) {
@@ -60,9 +58,8 @@ async function getCSRF(html) {
     
     const csrf = await webView.evaluateJavaScript(`
       (function() {
-        var input = document.querySelector('input[name="csrf_token"]');
-        var meta = document.querySelector('meta[name="csrf-token"]');
-        return input?.value || meta?.getAttribute('content') || null;
+        var input = document.querySelector('input[name="_csrf_token"]');
+        return input?.value || null;
       })()
     `);
     
@@ -75,15 +72,15 @@ async function getCSRF(html) {
 }
 
 async function login(cookie, csrf_token) {
-  const request = new Request("https://www.yupparaj.ac.th/canteen/api/login.php");
+  const request = new Request("https://www.yupparaj.ac.th/canteen/");
   request.method = "POST";
   request.headers = {
-    "Cookie": `PHPSESSID=${cookie}`,
+    "Cookie": `canteen_session=${cookie}`,
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
     "Referer": "https://www.yupparaj.ac.th/canteen/login.php"
   };
-  request.body = `username=${username}&password=${password}&csrf_token=${csrf_token}&Login=`;
+  request.body = `_csrf_token=${csrf_token}&user_type=student&username=${username}&password=${password}`;
   
   try {
     const response = await request.loadString();
@@ -103,24 +100,10 @@ async function extractBalance(html) {
     const balance = await webView.evaluateJavaScript(`
       (function() {
         // Primary selector
-        var balanceElement = document.querySelector('html > body.sidebar-closed.sidebar-collapse > div.wrapper > div.content-wrapper > section.content > div.container-fluid > div.row.mb-4 > div.col-12 > div.card.card-primary.card-outline > div.card-body.text-center > h1.display-3.font-weight-bold.text-success');
+        var balanceElement = document.querySelector('body > main > div > div.bg-gradient-to-r.from-blue-500.to-indigo-600.rounded-2xl.p-8.text-white.shadow-xl > div.flex.items-center.justify-between > div:nth-child(1) > p.text-4xl.font-bold.mt-1');
         
         if (balanceElement) {
           return balanceElement.textContent.trim();
-        }
-        
-        // Fallback selectors
-        var fallbacks = [
-          'h1.display-3.font-weight-bold.text-success',
-          '.text-success',
-          '.display-3'
-        ];
-        
-        for (var selector of fallbacks) {
-          var element = document.querySelector(selector);
-          if (element && element.textContent.trim()) {
-            return element.textContent.trim();
-          }
         }
         
         return '0';
@@ -136,7 +119,7 @@ async function extractBalance(html) {
 }
 
 function parseValue(value) {
-  const parsed = parseFloat(value.replace(/,/g, ''));
+  const parsed = parseFloat(value.replace(/[฿,]/g, ''));
   return isNaN(parsed) ? 0 : Number(parsed.toFixed(2));
 }
 
@@ -149,7 +132,7 @@ async function getCanteenData() {
     
     let [currentPage, html, response] = pageData;
     
-    const session = response.cookies.find(cookie => cookie.name === "PHPSESSID")?.value;
+    const session = response.cookies.find(cookie => cookie.name === "canteen_session")?.value;
     if (!session) return "No Session";
     
     // Login if needed
