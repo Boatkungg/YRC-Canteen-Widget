@@ -378,6 +378,7 @@ async function main() {
   Script.complete();
 }
 
-await main();
+// Uncomment to run main directly for testing
+// await main();
 
 module.exports = { main };
