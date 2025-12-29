@@ -1,5 +1,8 @@
-// credit: https://github.com/linusmimietz/Scriptable-Auto-Update
+// Variables used by Scriptable.
+// These must be at the very top of the file. Do not edit.
+// icon-color: cyan; icon-glyph: magic;
 
+// from: https://github.com/linusmimietz/Scriptable-Auto-Update
 let scriptName = 'YRCcanteen';
 let scriptUrl = 'https://raw.githubusercontent.com/Boatkungg/YRC-Canteen-Widget/refs/heads/main/YRCcanteen.js';
 
