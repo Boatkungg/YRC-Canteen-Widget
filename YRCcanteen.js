@@ -72,13 +72,13 @@ async function getCSRF(html) {
 }
 
 async function login(cookie, csrf_token) {
-  const request = new Request("https://www.yupparaj.ac.th/canteen/");
+  const request = new Request("https://www.yupparaj.ac.th/canteen/login");
   request.method = "POST";
   request.headers = {
     "Cookie": `canteen_session=${cookie}`,
     "Content-Type": "application/x-www-form-urlencoded",
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
-    "Referer": "https://www.yupparaj.ac.th/canteen/login.php"
+    "Referer": "https://www.yupparaj.ac.th/canteen/login"
   };
   request.body = `_csrf_token=${csrf_token}&user_type=student&username=${username}&password=${password}`;
   
@@ -89,6 +89,22 @@ async function login(cookie, csrf_token) {
   } catch (error) {
     log(`Login failed: ${error.message}`);
     return null;
+  }
+}
+
+async function logout(cookie) {
+  const request = new Request("https://www.yupparaj.ac.th/canteen/student/logout");
+  request.method = "GET";
+  request.headers = {
+    "Cookie": `canteen_session=${cookie}`,
+    "Content-Type": "application/x-www-form-urlencoded",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15",
+    "Referer": "https://www.yupparaj.ac.th/canteen/student/dashboard"
+  };
+
+  try {
+    const response = await request.loadString();
+    log(`Logout response: ${request.response.statusCode}`);
   }
 }
 
@@ -111,10 +127,10 @@ async function extractBalance(html) {
     `);
     
     log(`Extracted balance: ${balance}`);
-    return balance || '0';
+    return balance || '0.00';
   } catch (error) {
     log(`Balance extraction failed: ${error.message}`);
-    return '0';
+    return '0.00';
   }
 }
 
@@ -151,6 +167,9 @@ async function getCanteenData() {
     const rawBalance = await extractBalance(html);
     const parsed = parseValue(rawBalance);
     const balance = parsed > 0 ? parsed.toString() : rawBalance;
+
+    // Logout
+    await logout(session);
     
     log(`Final balance: ${balance}`);
     return balance;
